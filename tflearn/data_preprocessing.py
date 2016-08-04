@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import division, print_function, absolute_import
 
+import random
 import numpy as np
 import pickle
 import tensorflow as tf
@@ -368,6 +369,39 @@ class ImagePreprocessing(DataPreprocessing):
             new_batch.append(batch[i][nh: nh + shape[0], nw: nw + shape[1]])
         return new_batch
 
+    #Copied add_random_crop and _random_crop methods from DataAugmentation
+    #Ref:- https://github.com/tflearn/tflearn/issues/215
+    def add_random_crop(self, crop_shape, padding=None):
+        """ add_random_crop.
+        Randomly crop a picture according to 'crop_shape'. An optional padding
+        can be specified, for padding picture with 0s (To conserve original
+        image shape).
+        Arguments:
+            crop_shape: `tuple` of `int`. The crop shape (height, width).
+            padding: `int`. If not None, the image is padded with 'padding' 0s.
+        Returns:
+            Nothing.
+        """
+        self.methods.append(self._random_crop)
+        self.args.append([crop_shape, padding])
+
+    def _random_crop(self, batch, crop_shape, padding=None):
+        oshape = np.shape(batch[0])
+        if padding:
+            oshape = (oshape[0] + 2*padding, oshape[1] + 2*padding)
+        new_batch = []
+        npad = ((padding, padding), (padding, padding), (0, 0))
+        for i in range(len(batch)):
+            new_batch.append(batch[i])
+            if padding:
+                new_batch[i] = np.lib.pad(batch[i], pad_width=npad,
+                                          mode='constant', constant_values=0)
+            nh = random.randint(0, oshape[0] - crop_shape[0])
+            nw = random.randint(0, oshape[1] - crop_shape[1])
+            new_batch[i] = new_batch[i][nh:nh + crop_shape[0],
+                                        nw:nw + crop_shape[1]]
+        return new_batch
+ 
     # ----------------------------------------------
     #  Preprocessing Methods (Overwrited from Base)
     # ----------------------------------------------
