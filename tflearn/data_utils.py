@@ -55,7 +55,7 @@ def pad_sequences(sequences, maxlen=None, dtype='int32', padding='post',
 
     Pad each sequence to the same length: the length of the longest sequence.
     If maxlen is provided, any sequence longer than maxlen is truncated to
-    maxlen. Truncation happens off either the beginning or the end (default) 
+    maxlen. Truncation happens off either the beginning or the end (default)
     of the sequence. Supports pre-padding and post-padding (default).
 
     Arguments:
@@ -98,7 +98,7 @@ def pad_sequences(sequences, maxlen=None, dtype='int32', padding='post',
     return x
 
 
-def string_to_semi_redundant_sequences(string, seq_maxlen=25, redun_step=3):
+def string_to_semi_redundant_sequences(string, seq_maxlen=25, redun_step=3, char_idx=None):
     """ string_to_semi_redundant_sequences.
 
     Vectorize a string and returns parsed sequences and targets, along with
@@ -108,14 +108,18 @@ def string_to_semi_redundant_sequences(string, seq_maxlen=25, redun_step=3):
         string: `str`. Lower-case text from input text file.
         seq_maxlen: `int`. Maximum length of a sequence. Default: 25.
         redun_step: `int`. Redundancy step. Default: 3.
+        char_idx: 'dict'. A dictionary to convert chars to positions. Will be automatically generated if None
 
     Returns:
         A tuple: (inputs, targets, dictionary)
     """
 
     print("Vectorizing text...")
-    chars = set(string)
-    char_idx = {c: i for i, c in enumerate(chars)}
+
+    if char_idx is None:
+      char_idx = chars_to_dictionary(string)
+
+    len_chars = len(char_idx)
 
     sequences = []
     next_chars = []
@@ -123,28 +127,34 @@ def string_to_semi_redundant_sequences(string, seq_maxlen=25, redun_step=3):
         sequences.append(string[i: i + seq_maxlen])
         next_chars.append(string[i + seq_maxlen])
 
-    X = np.zeros((len(sequences), seq_maxlen, len(chars)), dtype=np.bool)
-    Y = np.zeros((len(sequences), len(chars)), dtype=np.bool)
+    X = np.zeros((len(sequences), seq_maxlen, len_chars), dtype=np.bool)
+    Y = np.zeros((len(sequences), len_chars), dtype=np.bool)
     for i, seq in enumerate(sequences):
         for t, char in enumerate(seq):
             X[i, t, char_idx[char]] = 1
         Y[i, char_idx[next_chars[i]]] = 1
 
-    print("Text total length: " + str(len(string)))
-    print("Distinct chars: " + str(len(chars)))
-    print("Total sequences: " + str(len(sequences)))
+    print("Text total length: {:,}".format(len(string)))
+    print("Distinct chars   : {:,}".format(len_chars))
+    print("Total sequences  : {:,}".format(len(sequences)))
 
     return X, Y, char_idx
 
 
 def textfile_to_semi_redundant_sequences(path, seq_maxlen=25, redun_step=3,
-                                         to_lower_case=False):
+                                         to_lower_case=False, pre_defined_char_idx=None):
     """ Vectorize Text file """
     text = open(path).read()
     if to_lower_case:
         text = text.lower()
-    return string_to_semi_redundant_sequences(text, seq_maxlen, redun_step)
+    return string_to_semi_redundant_sequences(text, seq_maxlen, redun_step, pre_defined_char_idx)
 
+def chars_to_dictionary(string):
+    """ Creates a dictionary char:integer for each unique character """
+    chars = set(string)
+    # sorted tries to keep a consistent dictionary, if you run a second time for the same char set
+    char_idx = {c: i for i, c in enumerate(sorted(chars))}
+    return char_idx
 
 def random_sequence_from_string(string, seq_maxlen):
     rand_index = random.randint(0, len(string) - seq_maxlen - 1)
@@ -399,10 +409,23 @@ def build_hdf5_image_dataset(target_path, image_shape, output_path='dataset.h5',
         else:
             dataset['Y'][i] = labels[i]
 
+def get_img_channel(image_path):
+    """
+    Load a image and return the channel of the image
+    :param image_path:
+    :return: the channel of the image
+    """
+    img = load_image(image_path)
+    img = pil_to_nparray(img)
+    try:
+        channel = img.shape[2]
+    except:
+        channel = 1
+    return channel
 
 def image_preloader(target_path, image_shape, mode='file', normalize=True,
                     grayscale=False, categorical_labels=True,
-                    files_extension=None):
+                    files_extension=None, filter_channel=False):
     """ Image PreLoader.
 
     Create a python array (`Preloader`) that loads images on the fly (from
@@ -469,6 +492,8 @@ def image_preloader(target_path, image_shape, mode='file', normalize=True,
         files_extension: `list of str`. A list of allowed image file
             extension, for example ['.jpg', '.jpeg', '.png']. If None,
             all files are allowed.
+        filter_channel: `bool`. If true, images which the channel is not 3 should
+            be filter.
 
     Returns:
         (X, Y): with X the images array and Y the labels array.
@@ -477,14 +502,18 @@ def image_preloader(target_path, image_shape, mode='file', normalize=True,
     assert mode in ['folder', 'file']
     if mode == 'folder':
         images, labels = directory_to_samples(target_path,
-                                              flags=files_extension)
+                                              flags=files_extension, filter_channel=filter_channel)
     else:
         with open(target_path, 'r') as f:
             images, labels = [], []
             for l in f.readlines():
                 l = l.strip('\n').split()
-                images.append(l[0])
-                labels.append(int(l[1]))
+                if not files_extension or any(flag in l(0) for flag in files_extension):
+                    if filter_channel:
+                        if get_img_channel(l[0]) != 3:
+                            continue
+                    images.append(l[0])
+                    labels.append(int(l[1]))
 
     n_classes = np.max(labels) + 1
     X = ImagePreloader(images, image_shape, normalize, grayscale)
@@ -685,7 +714,7 @@ def featurewise_std_normalization(X, std=None):
         return X / std
 
 
-def directory_to_samples(directory, flags=None):
+def directory_to_samples(directory, flags=None, filter_channel=False):
     """ Read a directory, and list all subdirectories files as class sample """
     samples = []
     targets = []
@@ -702,6 +731,9 @@ def directory_to_samples(directory, flags=None):
             walk = os.walk(c_dir).__next__()
         for sample in walk[2]:
             if not flags or any(flag in sample for flag in flags):
+                if filter_channel:
+                    if get_img_channel(os.path.join(c_dir, sample)) != 3:
+                        continue
                 samples.append(os.path.join(c_dir, sample))
                 targets.append(label)
         label += 1

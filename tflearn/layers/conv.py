@@ -529,11 +529,11 @@ def conv_1d(incoming, nb_filter, filter_size, strides=1, padding='same',
     filter_size = utils.autoformat_filter_conv2d(filter_size,
                                                  input_shape[-1],
                                                  nb_filter)
-    # filter_size = [1, filter_size[1], 1, 1]
-    filter_size[1] = 1
+    filter_size = [1, filter_size[1], 1, 1]
+    #filter_size[1] = 1
     strides = utils.autoformat_kernel_2d(strides)
-    # strides = [1, strides[1], 1, 1]
-    strides[1] = 1
+    strides = [1, strides[1], 1, 1]
+    #strides[1] = 1
     padding = utils.autoformat_padding(padding)
 
     with tf.variable_op_scope([incoming], scope, name, reuse=reuse) as scope:
@@ -871,6 +871,32 @@ def avg_pool_3d(incoming, kernel_size, strides=None, padding='same',
 
     # Add attributes to Tensor to easy access weights
     inference.scope = scope
+
+    # Track output tensor.
+    tf.add_to_collection(tf.GraphKeys.LAYER_TENSOR + '/' + name, inference)
+
+    return inference
+
+
+def global_max_pool(incoming, name="GlobalMaxPool"):
+    """ Global Max Pooling.
+
+    Input:
+        4-D Tensor [batch, height, width, in_channels].
+
+    Output:
+        2-D Tensor [batch, pooled dim]
+
+    Arguments:
+        incoming: `Tensor`. Incoming 4-D Tensor.
+        name: A name for this layer (optional). Default: 'GlobalMaxPool'.
+
+    """
+    input_shape = utils.get_incoming_shape(incoming)
+    assert len(input_shape) == 4, "Incoming Tensor shape must be 4-D"
+
+    with tf.name_scope(name):
+        inference = tf.reduce_max(incoming, [1, 2])
 
     # Track output tensor.
     tf.add_to_collection(tf.GraphKeys.LAYER_TENSOR + '/' + name, inference)

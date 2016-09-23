@@ -5,3 +5,10 @@ __pycache__
 *.egg-info
 build/*
 dist/*
+*~
+.cache
+.coverage
+checkpoint
+htmlcov
+mnist
+test*tflearn*
