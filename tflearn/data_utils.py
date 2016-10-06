@@ -579,21 +579,24 @@ def image_dirs_to_samples(directory, resize=None, convert_gray=None,
 
 
 def build_image_dataset_from_dir(directory,
-                                 dataset_file="my_tflearn_dataset.pkl",
+                                 dataset_file=None,
                                  resize=None, convert_gray=None,
                                  filetypes=None, shuffle_data=False,
                                  categorical_Y=False):
-    try:
-        X, Y = pickle.load(open(dataset_file, 'rb'))
-    except Exception:
+    if dataset_file:
+        try:
+            X, Y = pickle.load(open(dataset_file, 'rb'))
+        except Exception:
+            X, Y = image_dirs_to_samples(directory, resize, convert_gray, filetypes)
+    else:
         X, Y = image_dirs_to_samples(directory, resize, convert_gray, filetypes)
-        if categorical_Y:
-            Y = to_categorical(Y, np.max(Y) + 1) # First class is '0'
-        if shuffle_data:
-            X, Y = shuffle(X, Y)
+    if categorical_Y:
+        Y = to_categorical(Y, np.max(Y) + 1) # First class is '0'
+    if shuffle_data:
+        X, Y = shuffle(X, Y)
+    if dataset_file:
         pickle.dump((X, Y), open(dataset_file, 'wb'))
     return X, Y
-
 
 def random_flip_leftright(x):
     if bool(random.getrandbits(1)):
